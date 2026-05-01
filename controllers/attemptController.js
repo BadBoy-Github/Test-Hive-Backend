@@ -195,3 +195,70 @@ exports.getResults = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+exports.getTestResultsAdmin = async (req, res) => {
+  try {
+    const attempts = await Attempt.find({ testId: req.params.testId, isCompleted: true })
+      .populate('userId', 'name email')
+      .sort({ endTime: -1 });
+
+    // Group by user
+    const userMap = {};
+    attempts.forEach(attempt => {
+      const userId = attempt.userId._id.toString();
+      if (!userMap[userId]) {
+        userMap[userId] = {
+          _id: userId,
+          name: attempt.userId.name,
+          email: attempt.userId.email,
+          attempts: []
+        };
+      }
+      userMap[userId].attempts.push({
+        _id: attempt._id,
+        number: userMap[userId].attempts.length + 1,
+        score: attempt.score,
+        endTime: attempt.endTime
+      });
+    });
+
+    // Convert to array and calculate latest score
+    const students = Object.values(userMap).map(student => {
+      student.attempts.sort((a, b) => new Date(b.endTime) - new Date(a.endTime));
+      student.latestScore = student.attempts[0].score;
+      return student;
+    });
+
+    // Sort students by latest score desc
+    students.sort((a, b) => b.latestScore - a.latestScore);
+
+    res.json(students);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getAttemptAdmin = async (req, res) => {
+  try {
+    const attempt = await Attempt.findById(req.params.attemptId)
+      .populate('testId', 'title showResults')
+      .populate('userId', 'name email');
+
+    if (!attempt) return res.status(404).json({ message: 'Attempt not found' });
+
+    const answers = await Answer.find({ attemptId: attempt._id })
+      .populate({
+        path: 'questionId',
+        select: 'questionText type correctAnswer explanation marks'
+      });
+
+    const detailedAnswers = answers.filter(answer => answer.questionId);
+
+    res.json({
+      ...attempt.toObject(),
+      answers: detailedAnswers
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};

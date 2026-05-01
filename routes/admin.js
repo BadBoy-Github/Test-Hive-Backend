@@ -7,6 +7,7 @@ const admin = require('../middleware/admin');
 const analyticsController = require('../controllers/analyticsController');
 const studentController = require('../controllers/studentController');
 const testController = require('../controllers/testController');
+const attemptController = require('../controllers/attemptController');
 
 // Analytics routes
 router.get('/analytics', auth, admin, analyticsController.getAnalytics);
@@ -20,5 +21,9 @@ router.delete('/students/:id', auth, admin, studentController.deleteStudent);
 // Test management routes (moved from tests.js for consistency)
 router.get('/tests', auth, admin, testController.getAllTestsAdmin);
 router.patch('/tests/:id', auth, admin, testController.updateTest);
+
+// Test results
+router.get('/test-results/:testId', auth, admin, attemptController.getTestResultsAdmin);
+router.get('/attempt/:attemptId', auth, admin, attemptController.getAttemptAdmin);
 
 module.exports = router;
