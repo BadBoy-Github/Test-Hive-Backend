@@ -11,11 +11,11 @@ exports.startAttempt = async (req, res) => {
     // Check if test is active
     if (!test.isActive) return res.status(400).json({ message: 'Test is not currently available' });
 
-    // Check max attempts
+    // Check max attempts - only count completed attempts
     const existingAttempts = await Attempt.countDocuments({
       testId: req.params.testId,
       userId: req.user.id,
-      status: { $ne: 'abandoned' } // Don't count abandoned attempts
+      status: 'completed' // Only count completed attempts
     });
     if (existingAttempts >= test.maxAttempts) {
       return res.status(400).json({
@@ -23,6 +23,18 @@ exports.startAttempt = async (req, res) => {
         attemptsUsed: existingAttempts,
         maxAttempts: test.maxAttempts
       });
+    }
+
+    // Check if there's already an ongoing attempt for this test
+    const ongoingAttempt = await Attempt.findOne({
+      testId: req.params.testId,
+      userId: req.user.id,
+      status: 'ongoing'
+    });
+
+    if (ongoingAttempt) {
+      // Resume the existing attempt instead of creating a new one
+      return res.status(200).json(ongoingAttempt);
     }
 
     const attempt = new Attempt({ testId: req.params.testId, userId: req.user.id });
@@ -50,6 +62,11 @@ exports.submitAnswer = async (req, res) => {
       const correctAnswers = Array.isArray(question.correctAnswer) ? question.correctAnswer : [question.correctAnswer];
       const userAnswers = Array.isArray(userAnswer) ? userAnswer : [userAnswer];
 
+      console.log('Evaluating MCQ/Checkbox:');
+      console.log('Question type:', question.type);
+      console.log('Correct answers:', correctAnswers);
+      console.log('User answers:', userAnswers);
+
       // For MCQ, user should select exactly one correct answer
       // For checkbox, user should select all correct answers
       if (question.type === 'mcq') {
@@ -63,10 +80,29 @@ exports.submitAnswer = async (req, res) => {
       if (isCorrect) {
         marksObtained = question.marks;
       }
-    } else if (question.type === 'coding') {
-      // For coding, assume auto-evaluation for now, or manual later
-      // Placeholder
-      marksObtained = 0; // Will be evaluated later
+    } else if (question.type === 'descriptive' || question.type === 'coding') {
+      // For descriptive and coding questions, compare user's answer with correct answer
+      if (question.correctAnswer) {
+        // Handle both array and string formats for backward compatibility
+        const correctAnswer = Array.isArray(question.correctAnswer)
+          ? question.correctAnswer[0]
+          : question.correctAnswer;
+
+        // Normalize answers for comparison
+        const userAns = typeof userAnswer === 'string' ? userAnswer.trim().toLowerCase() : '';
+        const correctAns = typeof correctAnswer === 'string' ? correctAnswer.trim().toLowerCase() : '';
+
+        // Case-insensitive string match
+        isCorrect = userAns !== '' && userAns === correctAns;
+
+        if (isCorrect) {
+          marksObtained = question.marks;
+        }
+      } else {
+        // No correct answer set, mark as incorrect
+        isCorrect = false;
+        marksObtained = 0;
+      }
     }
 
     const answer = new Answer({
@@ -95,10 +131,17 @@ exports.completeAttempt = async (req, res) => {
 
     if (!attempt) return res.status(404).json({ message: 'Attempt not found' });
 
-    // Calculate score
+    // Calculate score and total time
     const answers = await Answer.find({ attemptId: req.params.attemptId });
     const totalScore = answers.reduce((sum, ans) => sum + ans.marksObtained, 0);
+
+    // Calculate total time in seconds
+    const startTime = new Date(attempt.startTime);
+    const endTime = new Date();
+    const totalTime = Math.floor((endTime - startTime) / 1000);
+
     attempt.score = totalScore;
+    attempt.totalTime = totalTime;
     await attempt.save();
 
     res.json(attempt);

@@ -10,8 +10,7 @@ router.post('/', auth, admin, testController.createTest);
 router.put('/:id', auth, admin, testController.updateTest);
 router.delete('/:id', auth, admin, testController.deleteTest);
 
-router.get('/admin/all', auth, admin, testController.getAllTestsAdmin);
-router.patch('/admin/:id', auth, admin, testController.updateTest);
+// Keep only test-related routes here
 
 // Question routes - more specific first
 router.post('/:id/reorder-questions', auth, admin, testController.reorderQuestions);
