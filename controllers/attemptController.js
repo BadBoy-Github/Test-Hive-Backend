@@ -218,7 +218,8 @@ exports.getTestResultsAdmin = async (req, res) => {
         _id: attempt._id,
         number: userMap[userId].attempts.length + 1,
         score: attempt.score,
-        endTime: attempt.endTime
+        endTime: attempt.endTime,
+        totalTime: attempt.totalTime
       });
     });
 
