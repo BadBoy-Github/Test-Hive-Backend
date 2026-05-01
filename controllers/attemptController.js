@@ -226,6 +226,9 @@ exports.getTestResultsAdmin = async (req, res) => {
     // Convert to array and calculate latest score
     const students = Object.values(userMap).map(student => {
       student.attempts.sort((a, b) => new Date(b.endTime) - new Date(a.endTime));
+      student.attempts.forEach((attempt, index) => {
+        attempt.number = student.attempts.length - index;
+      });
       student.latestScore = student.attempts[0].score;
       return student;
     });
