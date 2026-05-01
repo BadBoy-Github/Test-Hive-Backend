@@ -49,11 +49,13 @@ exports.startAttempt = async (req, res) => {
 exports.submitAnswer = async (req, res) => {
   const { questionId, userAnswer, timeTaken } = req.body;
   try {
-    const attempt = await Attempt.findOne({ _id: req.params.attemptId, userId: req.user.id });
+    const attempt = await Attempt.findOne({ _id: req.params.attemptId, userId: req.user.id }).populate('testId');
     if (!attempt) return res.status(404).json({ message: 'Attempt not found' });
 
     const question = await Question.findById(questionId);
     if (!question) return res.status(404).json({ message: 'Question not found' });
+
+    const test = attempt.testId;
 
     let isCorrect = false;
     let marksObtained = 0;
@@ -79,6 +81,8 @@ exports.submitAnswer = async (req, res) => {
 
       if (isCorrect) {
         marksObtained = question.marks;
+      } else if (test.negativeMarking) {
+        marksObtained = -test.negativeMarkingValue;
       }
     } else if (question.type === 'descriptive' || question.type === 'coding') {
       // For descriptive and coding questions, compare user's answer with correct answer
@@ -97,6 +101,8 @@ exports.submitAnswer = async (req, res) => {
 
         if (isCorrect) {
           marksObtained = question.marks;
+        } else if (test.negativeMarking) {
+          marksObtained = -test.negativeMarkingValue;
         }
       } else {
         // No correct answer set, mark as incorrect
