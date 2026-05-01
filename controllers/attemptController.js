@@ -135,10 +135,10 @@ exports.completeAttempt = async (req, res) => {
     const answers = await Answer.find({ attemptId: req.params.attemptId });
     const totalScore = answers.reduce((sum, ans) => sum + ans.marksObtained, 0);
 
-    // Calculate total time in seconds
+    // Calculate total time in minutes
     const startTime = new Date(attempt.startTime);
     const endTime = new Date();
-    const totalTime = Math.floor((endTime - startTime) / 1000);
+    const totalTime = (endTime - startTime) / 60000;
 
     attempt.score = totalScore;
     attempt.totalTime = totalTime;

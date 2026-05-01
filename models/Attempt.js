@@ -8,7 +8,7 @@ const attemptSchema = new mongoose.Schema({
   isCompleted: { type: Boolean, default: false },
   score: { type: Number, default: 0 },
   tabSwitches: { type: Number, default: 0 },
-  totalTime: { type: Number }, // in seconds
+  totalTime: { type: Number }, // in minutes
   status: { type: String, enum: ['ongoing', 'completed', 'abandoned'], default: 'ongoing' }
 });
 
