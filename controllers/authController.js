@@ -9,24 +9,6 @@ const isAdminEmail = (email) => {
 };
 
 exports.register = async (req, res) => {
-  // Set CORS headers
-  const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://test-hive-frontend.vercel.app'
-  ];
-
-  const origin = req.headers.origin;
-  if (origin && (allowedOrigins.includes(origin) || origin.match(/https:\/\/test-hive-frontend.*\.vercel\.app/))) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else if (!origin) {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -46,29 +28,12 @@ exports.register = async (req, res) => {
     const token = jwt.sign({ id: user._id, email, role }, process.env.JWT_SECRET, { expiresIn: '3h' });
     res.status(201).json({ token, user: { id: user._id, name, email, phone, role } });
   } catch (err) {
+    console.error('Register error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
 exports.login = async (req, res) => {
-  // Set CORS headers
-  const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://test-hive-frontend.vercel.app'
-  ];
-
-  const origin = req.headers.origin;
-  if (origin && (allowedOrigins.includes(origin) || origin.match(/https:\/\/test-hive-frontend.*\.vercel\.app/))) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else if (!origin) {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-
   const { email, password } = req.body;
 
   try {
@@ -82,6 +47,7 @@ exports.login = async (req, res) => {
     const token = jwt.sign({ id: user._id, email, role }, process.env.JWT_SECRET, { expiresIn: '3h' });
     res.json({ token, user: { id: user._id, name: user.name, email, role } });
   } catch (err) {
+    console.error('Login error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 };
