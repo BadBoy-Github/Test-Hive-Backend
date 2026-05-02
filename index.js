@@ -23,26 +23,39 @@ if (cluster.isPrimary && process.env.NODE_ENV === 'production') {
 } else {
   // Middleware
   app.use(helmet());
-  app.use(cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (mobile apps, curl, etc.)
-      if (!origin) return callback(null, true);
 
-      const allowedOrigins = [
-        'http://localhost:5173',
-        'http://localhost:3000',
-        'https://test-hive-frontend.vercel.app',
-        'https://test-hive-backend.vercel.app'
-      ];
+  // CORS middleware with dynamic origin handling
+  app.use((req, res, next) => {
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://test-hive-frontend.vercel.app',
+      'https://test-hive-frontend-*.vercel.app', // Allow any Vercel preview deployments
+      'https://test-hive-backend.vercel.app'
+    ];
 
-      if (allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true
-  }));
+    const origin = req.headers.origin;
+
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) {
+      res.header('Access-Control-Allow-Origin', '*');
+    } else if (allowedOrigins.includes(origin) || origin.match(/https:\/\/test-hive-frontend.*\.vercel\.app/)) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
+
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(200);
+      return;
+    }
+
+    next();
+  });
+
   app.use(express.json());
 
   // Routes
