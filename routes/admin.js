@@ -9,35 +9,6 @@ const studentController = require('../controllers/studentController');
 const testController = require('../controllers/testController');
 const attemptController = require('../controllers/attemptController');
 
-// CORS middleware for admin routes
-router.use((req, res, next) => {
-  const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://test-hive-frontend.vercel.app',
-    'https://test-hive-frontend-*.vercel.app'
-  ];
-
-  const origin = req.headers.origin;
-
-  if (!origin) {
-    res.header('Access-Control-Allow-Origin', '*');
-  } else if (allowedOrigins.includes(origin) || origin.match(/https:\/\/test-hive-frontend.*\.vercel\.app/)) {
-    res.header('Access-Control-Allow-Origin', origin);
-  }
-
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-    return;
-  }
-
-  next();
-});
-
 // Analytics routes
 router.get('/analytics', auth, admin, analyticsController.getAnalytics);
 
@@ -47,7 +18,7 @@ router.post('/students', auth, admin, studentController.createStudent);
 router.put('/students/:id', auth, admin, studentController.updateStudent);
 router.delete('/students/:id', auth, admin, studentController.deleteStudent);
 
-// Test management routes (moved from tests.js for consistency)
+// Test management routes
 router.get('/tests', auth, admin, testController.getAllTestsAdmin);
 router.patch('/tests/:id', auth, admin, testController.updateTest);
 

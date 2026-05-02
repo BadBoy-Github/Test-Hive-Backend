@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const Test = require('../models/Test');
 const Question = require('../models/Question');
+const Attempt = require('../models/Attempt');
+const Answer = require('../models/Answer');
 
 exports.getAllTests = async (req, res) => {
   try {
@@ -8,7 +10,8 @@ exports.getAllTests = async (req, res) => {
     const tests = await Test.find({ isActive: { $ne: false } }).populate('createdBy', 'name');
     res.json(tests);
   } catch (err) {
-    res.status(500).json({ message: 'Server error' });
+    console.error('getAllTests error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
@@ -90,15 +93,6 @@ exports.deleteTest = async (req, res) => {
     res.json({ message: 'Test and all associated data deleted successfully' });
   } catch (err) {
     console.log('Delete test error:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-exports.deleteTest = async (req, res) => {
-  try {
-    await Test.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Test deleted' });
-  } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
 };
