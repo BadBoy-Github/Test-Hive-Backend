@@ -35,10 +35,44 @@ router.use((req, res, next) => {
 
 // Handle preflight OPTIONS requests explicitly
 router.options('/register', (req, res) => {
+  // Set CORS headers for OPTIONS
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://test-hive-frontend.vercel.app'
+  ];
+
+  const origin = req.headers.origin;
+  if (origin && (allowedOrigins.includes(origin) || origin.match(/https:\/\/test-hive-frontend.*\.vercel\.app/))) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.sendStatus(200);
 });
 
 router.options('/login', (req, res) => {
+  // Set CORS headers for OPTIONS
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://test-hive-frontend.vercel.app'
+  ];
+
+  const origin = req.headers.origin;
+  if (origin && (allowedOrigins.includes(origin) || origin.match(/https:\/\/test-hive-frontend.*\.vercel\.app/))) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.sendStatus(200);
 });
 
