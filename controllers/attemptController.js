@@ -202,7 +202,7 @@ exports.completeAttempt = async (req, res) => {
 exports.getResults = async (req, res) => {
   try {
     const attempts = await Attempt.find({ userId: req.user.id, isCompleted: true })
-      .populate('testId', 'title showResults')
+      .populate('testId', 'title showResults totalMarks')
       .sort({ createdAt: -1 });
 
     const validAttempts = attempts.filter(attempt => attempt.testId);
@@ -289,7 +289,7 @@ exports.getTestResultsAdmin = async (req, res) => {
 exports.getAttemptAdmin = async (req, res) => {
   try {
     const attempt = await Attempt.findById(req.params.attemptId)
-      .populate('testId', 'title showResults')
+      .populate('testId', 'title showResults totalMarks')
       .populate('userId', 'name email');
 
     if (!attempt) return res.status(404).json({ message: 'Attempt not found' });

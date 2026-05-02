@@ -26,8 +26,4 @@ router.patch('/tests/:id', auth, admin, testController.updateTest);
 router.get('/test-results/:testId', auth, admin, attemptController.getTestResultsAdmin);
 router.get('/attempt/:attemptId', auth, admin, attemptController.getAttemptAdmin);
 
-// Leaderboard
-router.get('/leaderboard', auth, admin, attemptController.getLeaderboard);
-router.get('/leaderboard/:testId', auth, admin, attemptController.getLeaderboardByTest);
-
 module.exports = router;

@@ -48,6 +48,7 @@ app.use('/api/tests', require('./routes/tests'));
 app.use('/api/attempts', require('./routes/attempts'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/users', require('./routes/users'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -57,7 +58,21 @@ app.use((err, req, res, next) => {
 
 // Database connection
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB connected'))
+  .then(async () => {
+    console.log('MongoDB connected');
+
+    // One-time migration: Recalculate totalMarks for all existing tests
+    const Test = require('./models/Test');
+    const tests = await Test.find({});
+    let updated = 0;
+    for (const test of tests) {
+      await test.recalculateTotalMarks();
+      updated++;
+    }
+    if (updated > 0) {
+      console.log(`✅ Migration complete: Recalculated totalMarks for ${updated} tests`);
+    }
+  })
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Only start server if not in Vercel/serverless environment

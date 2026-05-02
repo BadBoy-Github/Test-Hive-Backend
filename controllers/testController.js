@@ -124,6 +124,13 @@ exports.addQuestion = async (req, res) => {
       order
     });
     await question.save();
+
+    // Recalculate total marks for the test
+    const test = await Test.findById(req.params.id);
+    if (test) {
+      await test.recalculateTotalMarks();
+    }
+
     res.status(201).json(question);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -146,6 +153,13 @@ exports.updateQuestion = async (req, res) => {
       { new: true }
     );
     if (!question) return res.status(404).json({ message: 'Question not found' });
+
+    // Recalculate total marks for the test
+    const test = await Test.findById(req.params.id);
+    if (test) {
+      await test.recalculateTotalMarks();
+    }
+
     res.json(question);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -154,7 +168,21 @@ exports.updateQuestion = async (req, res) => {
 
 exports.deleteQuestion = async (req, res) => {
   try {
+    const question = await Question.findById(req.params.questionId);
+    if (!question) {
+      return res.status(404).json({ message: 'Question not found' });
+    }
+
+    const testId = question.testId;
+
     await Question.findByIdAndDelete(req.params.questionId);
+
+    // Recalculate total marks for the test
+    const test = await Test.findById(testId);
+    if (test) {
+      await test.recalculateTotalMarks();
+    }
+
     res.json({ message: 'Question deleted' });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -168,6 +196,11 @@ exports.reorderQuestions = async (req, res) => {
       Question.findByIdAndUpdate(id, { order })
     );
     await Promise.all(updatePromises);
+
+    // Recalculate total marks (reordering doesn't change marks but keeping consistent)
+    // Actually we can skip since marks don't change, but for safety we could recalc.
+    // We'll skip to avoid unnecessary DB query.
+
     res.json({ message: 'Questions reordered successfully' });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });

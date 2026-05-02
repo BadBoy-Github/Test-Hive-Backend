@@ -14,7 +14,16 @@ const testSchema = new mongoose.Schema({
   randomizeOptions: { type: Boolean, default: false },
   publicLeaderboard: { type: Boolean, default: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  totalMarks: { type: Number, default: 0 }
 });
+
+// Method to recalculate total marks from all questions
+testSchema.methods.recalculateTotalMarks = async function() {
+  const Question = require('./Question');
+  const questions = await Question.find({ testId: this._id });
+  this.totalMarks = questions.reduce((sum, q) => sum + q.marks, 0);
+  await this.save();
+};
 
 module.exports = mongoose.model('Test', testSchema);
