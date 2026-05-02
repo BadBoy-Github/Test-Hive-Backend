@@ -9,12 +9,8 @@ dotenv.config();
 // Validate critical environment variables
 if (!process.env.MONGODB_URI) {
   console.error('❌ MONGODB_URI environment variable is not set');
-  if (process.env.NODE_ENV === 'production') {
-    console.error('Server cannot start without MONGODB_URI in production');
-    process.exit(1);
-  } else {
-    console.warn('⚠️ Running without database (development only)');
-  }
+  console.error('Please set MONGODB_URI in your environment variables');
+  // Continue anyway - will fail DB operations
 }
 
 if (!process.env.JWT_SECRET) {
@@ -23,15 +19,15 @@ if (!process.env.JWT_SECRET) {
 
 const app = express();
 
-// Disable Mongoose buffering - fail fast if DB not ready
-mongoose.set('bufferCommands', false);
-
-let dbConnected = false;
+// Configure Mongoose
+const isVercel = process.env.VERCEL || process.env.Vercel;
+mongoose.set('bufferCommands', true);   // Always buffer for serverless compatibility
+mongoose.set('bufferTimeoutMS', 10000); // 10s timeout
 
 // Middleware
 app.use(helmet());
 
-// CORS middleware with dynamic origin handling
+// CORS
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
@@ -61,21 +57,32 @@ app.use(express.json());
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({ message: 'Server error', error: process.env.NODE_ENV === 'development' ? err.message : undefined });
+  res.status(500).json({ 
+    message: 'Server error', 
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined 
+  });
 });
 
-// Health check endpoint
+// Health check
 app.get('/health', (req, res) => {
   const status = mongoose.connection.readyState === 1 ? 'connected' : 'connecting';
-  res.json({ status, readyState: mongoose.connection.readyState, timestamp: new Date().toISOString() });
+  res.json({ 
+    status, 
+    readyState: mongoose.connection.readyState,
+    dbConnected: mongoose.connection.readyState === 1,
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Middleware to wait for DB before API requests (if not connected yet, return 503)
+// DB readiness middleware - returns 503 if DB not connected
 app.use('/api', (req, res, next) => {
-  if (mongoose.connection.readyState !== 1) {
+  const readyState = mongoose.connection.readyState;
+  if (readyState !== 1) {
+    console.log(`🛑 DB not ready (state: ${readyState}) - ${req.method} ${req.path}`);
     return res.status(503).json({ 
-      message: 'Database connecting... Please try again in a few seconds.',
-      readyState: mongoose.connection.readyState
+      message: 'Database unavailable. Please try again in a few seconds.',
+      readyState,
+      timestamp: new Date().toISOString()
     });
   }
   next();
@@ -89,83 +96,81 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/users', require('./routes/users'));
 
-// Database connection
+// Start server immediately (don't wait for DB)
 const PORT = process.env.PORT || 5000;
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
 
-const startServer = async () => {
-  try {
-    // Add connection event listeners for debugging and auto-reconnect
-    mongoose.connection.on('connecting', () => console.log('📡 MongoDB connecting...'));
-    mongoose.connection.on('connected', () => {
-      console.log('✅ MongoDB connected');
-      dbConnected = true;
-    });
-    mongoose.connection.on('error', (err) => {
-      console.error('❌ MongoDB error:', err.message);
-      dbConnected = false;
-    });
-    mongoose.connection.on('disconnected', () => {
-      console.warn('⚠️ MongoDB disconnected - will attempt to reconnect');
-      dbConnected = false;
-      // Attempt to reconnect after 3 seconds
-      setTimeout(() => {
-        if (mongoose.connection.readyState !== 1) {
-          mongoose.connect(process.env.MONGODB_URI).catch(err => {
-            console.error('Reconnection failed:', err.message);
-          });
+// Database connection with retry
+const connectDB = async (retries = 5) => {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      console.log(`🔄 MongoDB connection attempt ${i}/${retries}...`);
+      
+      await mongoose.connect(process.env.MONGODB_URI, {
+        serverSelectionTimeoutMS: 30000,
+        socketTimeoutMS: 120000,
+        maxPoolSize: isVercel ? 2 : 10,
+        minPoolSize: 1,
+        connectTimeoutMS: 30000,
+        keepAlive: true,
+        keepAliveInitialDelay: 300000,
+      });
+
+      console.log('✅ MongoDB connected successfully');
+      
+      // Run migration (skip on Vercel)
+      if (!isVercel) {
+        try {
+          const Test = require('./models/Test');
+          const tests = await Test.find({});
+          let updated = 0;
+          for (const test of tests) {
+            try {
+              await test.recalculateTotalMarks();
+              updated++;
+            } catch (err) {
+              console.error(`Failed to recalc totalMarks for test ${test._id}:`, err.message);
+            }
+          }
+          if (updated > 0) {
+            console.log(`✅ Migration complete: Recalculated totalMarks for ${updated} tests`);
+          }
+        } catch (err) {
+          console.error('Migration error:', err);
         }
-      }, 3000);
-    });
-
-    await mongoose.connect(process.env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 15000,
-      socketTimeoutMS: 60000,
-      maxPoolSize: 10,
-      minPoolSize: 5,
-    });
-
-     // Run migration only in local/dev mode (skip on Vercel)
-     if (process.env.NODE_ENV !== 'production' || !process.env.Vercel) {
-       try {
-         const Test = require('./models/Test');
-         const tests = await Test.find({});
-         let updated = 0;
-         for (const test of tests) {
-           try {
-             await test.recalculateTotalMarks();
-             updated++;
-           } catch (err) {
-             console.error(`Failed to recalc totalMarks for test ${test._id}:`, err.message);
-           }
-         }
-         if (updated > 0) {
-           console.log(`✅ Migration complete: Recalculated totalMarks for ${updated} tests`);
-         }
-       } catch (err) {
-         console.error('Migration error:', err);
-       }
-     }
-
-    // Start HTTP server only after DB connected
-    if (process.env.NODE_ENV !== 'production' || !process.env.Vercel) {
-      app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-    } else {
-      // For Vercel serverless
-      console.log('Server ready (Vercel)');
-    }
-  } catch (err) {
-    console.error('MongoDB connection failed:', err);
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('Starting server without DB (dev mode only)');
-      app.listen(PORT, () => console.log(`Server running on port ${PORT} (NO DB)`));
-    } else {
-      console.error('Cannot start without DB in production');
-      process.exit(1);
+      }
+      
+      return; // Success
+    } catch (err) {
+      console.error(`❌ MongoDB connection attempt ${i} failed:`, err.message);
+      if (i < retries) {
+        const delay = Math.min(1000 * i * 2, 10000); // Exponential backoff, max 10s
+        console.log(`⏳ Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        console.error('❌ All MongoDB connection attempts failed. API endpoints will return 503 until DB is available.');
+      }
     }
   }
 };
 
-startServer();
+// Start DB connection in background
+connectDB().catch(err => {
+  console.error('Fatal DB connection error:', err);
+});
 
-// Export for Vercel serverless
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    mongoose.connection.close(false, () => {
+      console.log('MongoDB connection closed');
+      process.exit(0);
+    });
+  });
+});
+
 module.exports = app;
