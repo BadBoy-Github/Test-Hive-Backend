@@ -25,36 +25,36 @@ if (cluster.isPrimary && process.env.NODE_ENV === 'production') {
   app.use(helmet());
 
   // CORS middleware with dynamic origin handling
-  app.use((req, res, next) => {
-    const allowedOrigins = [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'https://test-hive-frontend.vercel.app',
-      'https://test-hive-frontend-*.vercel.app', // Allow any Vercel preview deployments
-      'https://test-hive-backend.vercel.app'
-    ];
+  const corsOptions = {
+    origin: function (origin, callback) {
+      const allowedOrigins = [
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'https://test-hive-frontend.vercel.app',
+        'https://test-hive-backend.vercel.app'
+      ];
 
-    const origin = req.headers.origin;
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
 
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    if (!origin) {
-      res.header('Access-Control-Allow-Origin', '*');
-    } else if (allowedOrigins.includes(origin) || origin.match(/https:\/\/test-hive-frontend.*\.vercel\.app/)) {
-      res.header('Access-Control-Allow-Origin', origin);
-    }
+      // Check if origin is exactly in the list or matches the Vercel preview pattern
+      const isAllowed = allowedOrigins.includes(origin) || /^https:\/\/test-hive-frontend-.*\.vercel\.app$/.test(origin);
+      
+      callback(null, isAllowed);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+    optionsSuccessStatus: 200
+  };
 
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  app.use(cors(corsOptions));
 
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-      res.sendStatus(200);
-      return;
-    }
-
-    next();
-  });
+  // Handle preflight requests for all routes
+  app.options('*', cors(corsOptions));
 
   app.use(express.json());
 
