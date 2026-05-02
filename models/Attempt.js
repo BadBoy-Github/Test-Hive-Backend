@@ -8,8 +8,10 @@ const attemptSchema = new mongoose.Schema({
   isCompleted: { type: Boolean, default: false },
   score: { type: Number, default: 0 },
   tabSwitches: { type: Number, default: 0 },
-  totalTime: { type: Number }, // in minutes
-  status: { type: String, enum: ['ongoing', 'completed', 'abandoned'], default: 'ongoing' }
+  totalTime: { type: Number },
+  status: { type: String, enum: ['ongoing', 'completed', 'abandoned'], default: 'ongoing' },
+  isFirstAttempt: { type: Boolean, default: true },
+  passed: { type: Boolean, default: false }
 });
 
 module.exports = mongoose.model('Attempt', attemptSchema);

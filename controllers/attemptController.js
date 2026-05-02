@@ -2,20 +2,64 @@ const Attempt = require('../models/Attempt');
 const Answer = require('../models/Answer');
 const Test = require('../models/Test');
 const Question = require('../models/Question');
+const User = require('../models/User');
+
+// Helper function to update user streak
+const updateUserStreak = async (userId, attemptDate) => {
+  const user = await User.findById(userId);
+  if (!user) return;
+
+  const today = new Date(attemptDate);
+  today.setHours(0, 0, 0, 0);
+  
+  const studyDates = user.studyDates || [];
+  const todayAlreadyAdded = studyDates.some(d => {
+    const dDate = new Date(d);
+    dDate.setHours(0, 0, 0, 0);
+    return dDate.getTime() === today.getTime();
+  });
+
+  if (!todayAlreadyAdded) {
+    studyDates.push(today);
+    user.studyDates = studyDates;
+  }
+
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const hasToday = studyDates.some(d => {
+    const dDate = new Date(d);
+    dDate.setHours(0, 0, 0, 0);
+    return dDate.getTime() === today.getTime();
+  });
+  
+  const hasYesterday = studyDates.some(d => {
+    const dDate = new Date(d);
+    dDate.setHours(0, 0, 0, 0);
+    return dDate.getTime() === yesterday.getTime();
+  });
+
+  if (hasToday && hasYesterday) {
+    user.streak = (user.streak || 0) + 1;
+  } else if (hasToday) {
+    user.streak = 1;
+  }
+
+  user.lastAttemptDate = attemptDate;
+  await user.save();
+};
 
 exports.startAttempt = async (req, res) => {
   try {
     const test = await Test.findById(req.params.testId);
     if (!test) return res.status(404).json({ message: 'Test not found' });
 
-    // Check if test is active
     if (!test.isActive) return res.status(400).json({ message: 'Test is not currently available' });
 
-    // Check max attempts - only count completed attempts
     const existingAttempts = await Attempt.countDocuments({
       testId: req.params.testId,
       userId: req.user.id,
-      status: 'completed' // Only count completed attempts
+      status: 'completed'
     });
     if (existingAttempts >= test.maxAttempts) {
       return res.status(400).json({
@@ -25,7 +69,6 @@ exports.startAttempt = async (req, res) => {
       });
     }
 
-    // Check if there's already an ongoing attempt for this test
     const ongoingAttempt = await Attempt.findOne({
       testId: req.params.testId,
       userId: req.user.id,
@@ -33,7 +76,6 @@ exports.startAttempt = async (req, res) => {
     });
 
     if (ongoingAttempt) {
-      // Resume the existing attempt instead of creating a new one
       return res.status(200).json(ongoingAttempt);
     }
 
@@ -64,13 +106,6 @@ exports.submitAnswer = async (req, res) => {
       const correctAnswers = Array.isArray(question.correctAnswer) ? question.correctAnswer : [question.correctAnswer];
       const userAnswers = Array.isArray(userAnswer) ? userAnswer : [userAnswer];
 
-      console.log('Evaluating MCQ/Checkbox:');
-      console.log('Question type:', question.type);
-      console.log('Correct answers:', correctAnswers);
-      console.log('User answers:', userAnswers);
-
-      // For MCQ, user should select exactly one correct answer
-      // For checkbox, user should select all correct answers
       if (question.type === 'mcq') {
         isCorrect = correctAnswers.length === 1 && userAnswers.length === 1 && correctAnswers[0] === userAnswers[0];
       } else if (question.type === 'checkbox') {
@@ -85,18 +120,14 @@ exports.submitAnswer = async (req, res) => {
         marksObtained = -test.negativeMarkingValue;
       }
     } else if (question.type === 'descriptive' || question.type === 'coding') {
-      // For descriptive and coding questions, compare user's answer with correct answer
       if (question.correctAnswer) {
-        // Handle both array and string formats for backward compatibility
         const correctAnswer = Array.isArray(question.correctAnswer)
           ? question.correctAnswer[0]
           : question.correctAnswer;
 
-        // Normalize answers for comparison
         const userAns = typeof userAnswer === 'string' ? userAnswer.trim().toLowerCase() : '';
         const correctAns = typeof correctAnswer === 'string' ? correctAnswer.trim().toLowerCase() : '';
 
-        // Case-insensitive string match
         isCorrect = userAns !== '' && userAns === correctAns;
 
         if (isCorrect) {
@@ -105,7 +136,6 @@ exports.submitAnswer = async (req, res) => {
           marksObtained = -test.negativeMarkingValue;
         }
       } else {
-        // No correct answer set, mark as incorrect
         isCorrect = false;
         marksObtained = 0;
       }
@@ -133,22 +163,35 @@ exports.completeAttempt = async (req, res) => {
       { _id: req.params.attemptId, userId: req.user.id },
       { isCompleted: true, endTime: new Date(), status: 'completed' },
       { new: true }
-    );
+    ).populate('testId');
 
     if (!attempt) return res.status(404).json({ message: 'Attempt not found' });
 
-    // Calculate score and total time
     const answers = await Answer.find({ attemptId: req.params.attemptId });
     const totalScore = answers.reduce((sum, ans) => sum + ans.marksObtained, 0);
 
-    // Calculate total time in minutes
     const startTime = new Date(attempt.startTime);
     const endTime = new Date();
     const totalTime = (endTime - startTime) / 60000;
 
+    const test = attempt.testId;
+    const maxScore = answers.reduce((sum, ans) => {
+      const q = ans.questionId;
+      return sum + (q?.marks || 0);
+    }, 0);
+
     attempt.score = totalScore;
     attempt.totalTime = totalTime;
+    attempt.passed = maxScore > 0 && (totalScore / maxScore) * 100 >= test.passingScore;
+    attempt.isFirstAttempt = !(await Attempt.exists({
+      testId: attempt.testId,
+      userId: attempt.userId,
+      status: 'completed',
+      _id: { $ne: attempt._id }
+    }));
     await attempt.save();
+
+    updateUserStreak(req.user.id, new Date());
 
     res.json(attempt);
   } catch (err) {
@@ -162,7 +205,6 @@ exports.getResults = async (req, res) => {
       .populate('testId', 'title showResults')
       .sort({ createdAt: -1 });
 
-    // Filter out attempts with invalid or missing test references
     const validAttempts = attempts.filter(attempt => attempt.testId);
 
     const results = await Promise.all(validAttempts.map(async (attempt) => {
@@ -174,9 +216,8 @@ exports.getResults = async (req, res) => {
 
       let detailedAnswers = answers;
       if (!attempt.testId.showResults) {
-        // Hide correct answers and explanations if not allowed
         detailedAnswers = answers
-          .filter(answer => answer.questionId) // Only include answers with valid questions
+          .filter(answer => answer.questionId)
           .map(answer => ({
             ...answer.toObject(),
             questionId: {
@@ -186,7 +227,6 @@ exports.getResults = async (req, res) => {
             }
           }));
       } else {
-        // Also filter out answers with invalid questions even when showing results
         detailedAnswers = answers.filter(answer => answer.questionId);
       }
 
@@ -208,7 +248,6 @@ exports.getTestResultsAdmin = async (req, res) => {
       .populate('userId', 'name email')
       .sort({ endTime: -1 });
 
-    // Group by user
     const userMap = {};
     attempts.forEach(attempt => {
       const userId = attempt.userId._id.toString();
@@ -229,7 +268,6 @@ exports.getTestResultsAdmin = async (req, res) => {
       });
     });
 
-    // Convert to array and calculate latest score
     const students = Object.values(userMap).map(student => {
       student.attempts.sort((a, b) => new Date(b.endTime) - new Date(a.endTime));
       student.attempts.forEach((attempt, index) => {
@@ -239,7 +277,6 @@ exports.getTestResultsAdmin = async (req, res) => {
       return student;
     });
 
-    // Sort students by latest score desc
     students.sort((a, b) => b.latestScore - a.latestScore);
 
     res.json(students);
@@ -268,6 +305,74 @@ exports.getAttemptAdmin = async (req, res) => {
       ...attempt.toObject(),
       answers: detailedAnswers
     });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getLeaderboard = async (req, res) => {
+  try {
+    const users = await User.find({ role: 'student' })
+      .select('name email streak')
+      .sort({ streak: -1 });
+
+    const leaderboard = await Promise.all(users.map(async (user) => {
+      const attempts = await Attempt.find({ userId: user._id, isCompleted: true });
+      const averageScore = attempts.length > 0
+        ? attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length
+        : 0;
+      
+      return {
+        userId: { _id: user._id, name: user.name, email: user.email },
+        averageScore: Math.round(averageScore),
+        testsTaken: attempts.length,
+        streak: user.streak || 0
+      };
+    }));
+
+    leaderboard.sort((a, b) => {
+      if (b.averageScore !== a.averageScore) return b.averageScore - a.averageScore;
+      if (b.testsTaken !== a.testsTaken) return b.testsTaken - a.testsTaken;
+      return b.streak - a.streak;
+    });
+
+    res.json(leaderboard.map((entry, i) => ({ ...entry, rank: i + 1 })));
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getLeaderboardByTest = async (req, res) => {
+  try {
+    const attempts = await Attempt.find({ 
+      testId: req.params.testId, 
+      isCompleted: true 
+    }).populate('userId', 'name email');
+
+    const userMap = {};
+    attempts.forEach(attempt => {
+      const userId = attempt.userId._id.toString();
+      if (!userMap[userId]) {
+        userMap[userId] = {
+          userId: { _id: userId, name: attempt.userId.name, email: attempt.userId.email },
+          scores: [],
+          bestScore: 0,
+          attempts: 0
+        };
+      }
+      userMap[userId].scores.push(attempt.score);
+      userMap[userId].bestScore = Math.max(userMap[userId].bestScore, attempt.score);
+      userMap[userId].attempts++;
+    });
+
+    const leaderboard = Object.values(userMap)
+      .map(entry => ({
+        ...entry,
+        averageScore: Math.round(entry.scores.reduce((a, b) => a + b, 0) / entry.scores.length)
+      }))
+      .sort((a, b) => b.bestScore - a.bestScore);
+
+    res.json(leaderboard.map((entry, i) => ({ ...entry, rank: i + 1 })));
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
