@@ -20,7 +20,8 @@ exports.getAllTestsAdmin = async (req, res) => {
     const tests = await Test.find().populate('createdBy', 'name');
     res.json(tests);
   } catch (err) {
-    res.status(500).json({ message: 'Server error' });
+    console.error('getAllTestsAdmin error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 

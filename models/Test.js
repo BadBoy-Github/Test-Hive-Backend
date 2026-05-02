@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const Question = require('./Question');
 
 const testSchema = new mongoose.Schema({
   title: { type: String, required: true },
@@ -20,9 +21,11 @@ const testSchema = new mongoose.Schema({
 
 // Method to recalculate total marks from all questions
 testSchema.methods.recalculateTotalMarks = async function() {
-  const Question = require('./Question');
-  const questions = await Question.find({ testId: this._id });
-  this.totalMarks = questions.reduce((sum, q) => sum + q.marks, 0);
+  const result = await Question.aggregate([
+    { $match: { testId: this._id } },
+    { $group: { _id: null, total: { $sum: '$marks' } } }
+  ]);
+  this.totalMarks = result.length > 0 ? result[0].total : 0;
   await this.save();
 };
 
