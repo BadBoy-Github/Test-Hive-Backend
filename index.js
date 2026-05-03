@@ -32,13 +32,6 @@ if (!process.env.MONGODB_URI) {
     console.error('URI validation error:', e.message);
   }
 }
-    if (!/\/\/([^:]+):([^@]+)@/.test(uri)) {
-      console.error('❌ MONGODB_URI missing credentials');
-    }
-  } catch (e) {
-    console.error('URI validation error:', e.message);
-  }
-}
 
 if (!process.env.JWT_SECRET) console.warn('⚠️ JWT_SECRET not set');
 
