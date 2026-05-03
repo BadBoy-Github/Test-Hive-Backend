@@ -39,7 +39,7 @@ const app = express();
 
 // Mongoose
 mongoose.set('bufferCommands', true);
-mongoose.set('bufferTimeoutMS', 10000);
+mongoose.set('bufferTimeoutMS', 30000);
 
 // Middleware
 app.use(helmet());
@@ -117,8 +117,6 @@ const connectDB = async (attempt = 1) => {
       maxPoolSize: isVercel ? 2 : 10,
       minPoolSize: 1,
       connectTimeoutMS: 30000,
-      keepAlive: true,
-      keepAliveInitialDelay: 300000,
     });
     console.log('✅ MongoDB connected');
     // Migration: recalculate totalMarks for tests that haven't been calculated yet
