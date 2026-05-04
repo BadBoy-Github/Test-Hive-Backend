@@ -141,18 +141,18 @@ exports.submitAnswer = async (req, res) => {
       }
     }
 
-    // Upsert: update existing answer or create new one to prevent duplicates
-    const answer = await Answer.findOneAndUpdate(
-      { attemptId: req.params.attemptId, questionId },
-      {
-        userAnswer,
-        isCorrect,
-        marksObtained,
-        timeTaken,
-        submittedAt: new Date()
-      },
-      { new: true, upsert: true }
-    );
+    // Remove any existing answers for this question to prevent duplicates
+    await Answer.deleteMany({ attemptId: req.params.attemptId, questionId });
+
+    const answer = new Answer({
+      attemptId: req.params.attemptId,
+      questionId,
+      userAnswer,
+      isCorrect,
+      marksObtained,
+      timeTaken
+    });
+    await answer.save();
 
     res.json(answer);
   } catch (err) {
@@ -170,7 +170,28 @@ exports.completeAttempt = async (req, res) => {
 
     if (!attempt) return res.status(404).json({ message: 'Attempt not found' });
 
-    const answers = await Answer.find({ attemptId: req.params.attemptId });
+    const allAnswers = await Answer.find({ attemptId: req.params.attemptId });
+
+    // Deduplicate: keep only the latest answer per question
+    const latestMap = new Map();
+    allAnswers.forEach(ans => {
+      const qId = ans.questionId.toString();
+      const existing = latestMap.get(qId);
+      if (!existing || new Date(ans.submittedAt) > new Date(existing.submittedAt)) {
+        latestMap.set(qId, ans);
+      }
+    });
+    const answers = Array.from(latestMap.values());
+
+    // Delete duplicate answers from DB to keep clean
+    if (allAnswers.length > answers.length) {
+      const keptIds = answers.map(a => a._id);
+      await Answer.deleteMany({
+        attemptId: req.params.attemptId,
+        _id: { $nin: keptIds }
+      });
+    }
+
     const totalScore = answers.reduce((sum, ans) => sum + ans.marksObtained, 0);
 
     const startTime = new Date(attempt.startTime);
@@ -178,10 +199,7 @@ exports.completeAttempt = async (req, res) => {
     const totalTime = (endTime - startTime) / 60000;
 
     const test = attempt.testId;
-    const maxScore = answers.reduce((sum, ans) => {
-      const q = ans.questionId;
-      return sum + (q?.marks || 0);
-    }, 0);
+    const maxScore = test.totalMarks || 0;
 
     attempt.score = totalScore;
     attempt.totalTime = totalTime;
@@ -211,15 +229,25 @@ exports.getResults = async (req, res) => {
     const validAttempts = attempts.filter(attempt => attempt.testId);
 
     const results = await Promise.all(validAttempts.map(async (attempt) => {
-      const answers = await Answer.find({ attemptId: attempt._id })
+      let answers = await Answer.find({ attemptId: attempt._id })
         .populate({
           path: 'questionId',
           select: 'questionText type correctAnswer explanation marks'
-        });
+        })
+        .sort({ submittedAt: -1 }); // newest first
 
-      let detailedAnswers = answers;
+      // Deduplicate: keep the most recent answer per question
+      const seen = new Set();
+      const dedupedAnswers = answers.filter(answer => {
+        const qId = answer.questionId._id.toString();
+        if (seen.has(qId)) return false;
+        seen.add(qId);
+        return true;
+      });
+
+      let detailedAnswers = dedupedAnswers;
       if (!attempt.testId.showResults) {
-        detailedAnswers = answers
+        detailedAnswers = dedupedAnswers
           .filter(answer => answer.questionId)
           .map(answer => ({
             ...answer.toObject(),
@@ -230,7 +258,7 @@ exports.getResults = async (req, res) => {
             }
           }));
       } else {
-        detailedAnswers = answers.filter(answer => answer.questionId);
+        detailedAnswers = dedupedAnswers.filter(answer => answer.questionId);
       }
 
       return {
@@ -297,17 +325,25 @@ exports.getAttemptAdmin = async (req, res) => {
 
     if (!attempt) return res.status(404).json({ message: 'Attempt not found' });
 
-    const answers = await Answer.find({ attemptId: attempt._id })
+    let answers = await Answer.find({ attemptId: attempt._id })
       .populate({
         path: 'questionId',
         select: 'questionText type correctAnswer explanation marks'
-      });
+      })
+      .sort({ submittedAt: -1 }); // newest first
 
-    const detailedAnswers = answers.filter(answer => answer.questionId);
+    // Deduplicate: keep the most recent answer per question
+    const seen = new Set();
+    const dedupedAnswers = answers.filter(answer => {
+      const qId = answer.questionId._id.toString();
+      if (seen.has(qId)) return false;
+      seen.add(qId);
+      return true;
+    });
 
     res.json({
       ...attempt.toObject(),
-      answers: detailedAnswers
+      answers: dedupedAnswers
     });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
