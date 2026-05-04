@@ -141,15 +141,18 @@ exports.submitAnswer = async (req, res) => {
       }
     }
 
-    const answer = new Answer({
-      attemptId: req.params.attemptId,
-      questionId,
-      userAnswer,
-      isCorrect,
-      marksObtained,
-      timeTaken
-    });
-    await answer.save();
+    // Upsert: update existing answer or create new one to prevent duplicates
+    const answer = await Answer.findOneAndUpdate(
+      { attemptId: req.params.attemptId, questionId },
+      {
+        userAnswer,
+        isCorrect,
+        marksObtained,
+        timeTaken,
+        submittedAt: new Date()
+      },
+      { new: true, upsert: true }
+    );
 
     res.json(answer);
   } catch (err) {
