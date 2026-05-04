@@ -50,7 +50,7 @@ app.use(cors({
     cb(null, allowed.includes(origin) || /^https:\/\/test-hive-frontend-.*\.vercel\.app$/.test(origin));
   },
   credentials: true,
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
   allowedHeaders: ['Origin','X-Requested-With','Content-Type','Accept','Authorization'],
   optionsSuccessStatus: 200
 }));
