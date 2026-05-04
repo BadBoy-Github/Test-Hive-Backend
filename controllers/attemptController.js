@@ -97,6 +97,17 @@ exports.submitAnswer = async (req, res) => {
     const question = await Question.findById(questionId);
     if (!question) return res.status(404).json({ message: 'Question not found' });
 
+    // Check if answer is being cleared (empty)
+    const isEmpty = question.type === 'checkbox'
+      ? (Array.isArray(userAnswer) && userAnswer.length === 0)
+      : userAnswer === '' || userAnswer == null;
+
+    if (isEmpty) {
+      // Remove any existing answer for this question (clear)
+      await Answer.deleteMany({ attemptId: req.params.attemptId, questionId });
+      return res.json({ cleared: true });
+    }
+
     const test = attempt.testId;
 
     let isCorrect = false;
@@ -229,36 +240,71 @@ exports.getResults = async (req, res) => {
     const validAttempts = attempts.filter(attempt => attempt.testId);
 
     const results = await Promise.all(validAttempts.map(async (attempt) => {
+      // Fetch test questions
+      const testQuestions = await Question.find({ testId: attempt.testId._id }).sort({ order: 1 });
+
+      // Fetch answers (sorted newest first)
       let answers = await Answer.find({ attemptId: attempt._id })
         .populate({
           path: 'questionId',
-          select: 'questionText type correctAnswer explanation marks'
+          select: 'questionText type correctAnswer explanation marks options imageUrl'
         })
-        .sort({ submittedAt: -1 }); // newest first
+        .sort({ submittedAt: -1 });
 
-      // Deduplicate: keep the most recent answer per question
-      const seen = new Set();
-      const dedupedAnswers = answers.filter(answer => {
-        const qId = answer.questionId._id.toString();
-        if (seen.has(qId)) return false;
-        seen.add(qId);
-        return true;
+      // Build map of latest answer per question
+      const latestAnswerMap = new Map();
+      answers.forEach(ans => {
+        const qId = ans.questionId?._id?.toString();
+        if (qId) {
+          const existing = latestAnswerMap.get(qId);
+          if (!existing || new Date(ans.submittedAt) > new Date(existing.submittedAt)) {
+            latestAnswerMap.set(qId, ans);
+          }
+        }
       });
 
-      let detailedAnswers = dedupedAnswers;
+      // Merge all test questions with their answers (or empty if unanswered)
+      const mergedAnswers = testQuestions.map(q => {
+        const savedAnswer = latestAnswerMap.get(q._id.toString());
+        if (savedAnswer) {
+          return {
+            _id: savedAnswer._id,
+            attemptId: savedAnswer.attemptId,
+            questionId: savedAnswer.questionId,
+            userAnswer: savedAnswer.userAnswer,
+            isCorrect: savedAnswer.isCorrect,
+            marksObtained: savedAnswer.marksObtained,
+            timeTaken: savedAnswer.timeTaken,
+            submittedAt: savedAnswer.submittedAt
+          };
+        } else {
+          return {
+            _id: null,
+            attemptId: attempt._id,
+            questionId: q,
+            userAnswer: q.type === 'checkbox' ? [] : '',
+            isCorrect: false,
+            marksObtained: 0,
+            timeTaken: 0,
+            submittedAt: null
+          };
+        }
+      });
+
+      // Hide correct answers/explanation if results not released
+      let detailedAnswers = mergedAnswers;
       if (!attempt.testId.showResults) {
-        detailedAnswers = dedupedAnswers
-          .filter(answer => answer.questionId)
-          .map(answer => ({
-            ...answer.toObject(),
+        detailedAnswers = mergedAnswers.map(answer => {
+          const q = answer.questionId.toObject ? answer.questionId.toObject() : answer.questionId;
+          return {
+            ...answer,
             questionId: {
-              ...answer.questionId.toObject(),
+              ...q,
               correctAnswer: undefined,
               explanation: undefined
             }
-          }));
-      } else {
-        detailedAnswers = dedupedAnswers.filter(answer => answer.questionId);
+          };
+        });
       }
 
       return {
@@ -268,11 +314,11 @@ exports.getResults = async (req, res) => {
     }));
 
     res.json(results);
-   } catch (err) {
-     console.error('Get results error:', err);
-     res.status(500).json({ message: 'Server error', error: err.message });
-   }
- };
+  } catch (err) {
+    console.error('Get results error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
 
 exports.getTestResultsAdmin = async (req, res) => {
   try {
@@ -325,25 +371,59 @@ exports.getAttemptAdmin = async (req, res) => {
 
     if (!attempt) return res.status(404).json({ message: 'Attempt not found' });
 
+    // Fetch test questions
+    const testQuestions = await Question.find({ testId: attempt.testId._id }).sort({ order: 1 });
+
     let answers = await Answer.find({ attemptId: attempt._id })
       .populate({
         path: 'questionId',
-        select: 'questionText type correctAnswer explanation marks'
+        select: 'questionText type correctAnswer explanation marks options imageUrl'
       })
       .sort({ submittedAt: -1 }); // newest first
 
-    // Deduplicate: keep the most recent answer per question
-    const seen = new Set();
-    const dedupedAnswers = answers.filter(answer => {
-      const qId = answer.questionId._id.toString();
-      if (seen.has(qId)) return false;
-      seen.add(qId);
-      return true;
+    // Build latest answer map
+    const latestAnswerMap = new Map();
+    answers.forEach(ans => {
+      const qId = ans.questionId?._id?.toString();
+      if (qId) {
+        const existing = latestAnswerMap.get(qId);
+        if (!existing || new Date(ans.submittedAt) > new Date(existing.submittedAt)) {
+          latestAnswerMap.set(qId, ans);
+        }
+      }
+    });
+
+    // Merge with all test questions
+    const mergedAnswers = testQuestions.map(q => {
+      const savedAnswer = latestAnswerMap.get(q._id.toString());
+      if (savedAnswer) {
+        return {
+          _id: savedAnswer._id,
+          attemptId: savedAnswer.attemptId,
+          questionId: savedAnswer.questionId,
+          userAnswer: savedAnswer.userAnswer,
+          isCorrect: savedAnswer.isCorrect,
+          marksObtained: savedAnswer.marksObtained,
+          timeTaken: savedAnswer.timeTaken,
+          submittedAt: savedAnswer.submittedAt
+        };
+      } else {
+        return {
+          _id: null,
+          attemptId: attempt._id,
+          questionId: q,
+          userAnswer: q.type === 'checkbox' ? [] : '',
+          isCorrect: false,
+          marksObtained: 0,
+          timeTaken: 0,
+          submittedAt: null
+        };
+      }
     });
 
     res.json({
       ...attempt.toObject(),
-      answers: dedupedAnswers
+      answers: mergedAnswers
     });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
