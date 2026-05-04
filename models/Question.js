@@ -9,6 +9,7 @@ const questionSchema = new mongoose.Schema({
   marks: { type: Number, default: 1 },
   explanation: { type: String }, // hidden during test
   order: { type: Number, default: 0 }, // for reordering questions
+  imageUrl: { type: String }, // optional image URL for the question
   createdAt: { type: Date, default: Date.now }
 });
 

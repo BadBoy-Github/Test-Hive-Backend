@@ -108,7 +108,7 @@ exports.getQuestions = async (req, res) => {
 };
 
 exports.addQuestion = async (req, res) => {
-  const { questionText, type, options, correctAnswer, marks, explanation } = req.body;
+  const { questionText, type, options, correctAnswer, marks, explanation, imageUrl } = req.body;
   try {
     // Get the current max order for this test
     const maxOrder = await Question.find({ testId: req.params.id }).sort({ order: -1 }).limit(1);
@@ -122,6 +122,7 @@ exports.addQuestion = async (req, res) => {
       correctAnswer: Array.isArray(correctAnswer) ? correctAnswer : [correctAnswer].filter(Boolean),
       marks,
       explanation,
+      imageUrl,
       order
     });
     await question.save();
@@ -139,7 +140,7 @@ exports.addQuestion = async (req, res) => {
 };
 
 exports.updateQuestion = async (req, res) => {
-  const { questionText, type, options, correctAnswer, marks, explanation } = req.body;
+  const { questionText, type, options, correctAnswer, marks, explanation, imageUrl } = req.body;
   try {
     const question = await Question.findByIdAndUpdate(
       req.params.questionId,
@@ -149,7 +150,8 @@ exports.updateQuestion = async (req, res) => {
         options,
         correctAnswer: Array.isArray(correctAnswer) ? correctAnswer : [correctAnswer].filter(Boolean),
         marks,
-        explanation
+        explanation,
+        imageUrl
       },
       { new: true }
     );
