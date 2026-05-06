@@ -3,6 +3,7 @@ const Answer = require('../models/Answer');
 const Test = require('../models/Test');
 const Question = require('../models/Question');
 const User = require('../models/User');
+const { sendResultEmail } = require('../services/emailService');
 
 // Helper function to update user streak
 const updateUserStreak = async (userId, attemptDate) => {
@@ -224,6 +225,22 @@ exports.completeAttempt = async (req, res) => {
     await attempt.save();
 
     updateUserStreak(req.user.id, new Date());
+
+    // Send result email to student (async, don't block response)
+    try {
+      const student = await User.findById(req.user.id).select('name email');
+      if (student) {
+        sendResultEmail({
+          email: student.email,
+          userName: student.name,
+          testTitle: test.title,
+          score: totalScore,
+          totalMarks: maxScore
+        }).catch(err => console.error('Failed to send result email:', err.message));
+      }
+    } catch (err) {
+      console.error('Error fetching student for result email:', err.message);
+    }
 
     res.json(attempt);
   } catch (err) {

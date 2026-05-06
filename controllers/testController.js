@@ -3,6 +3,8 @@ const Test = require('../models/Test');
 const Question = require('../models/Question');
 const Attempt = require('../models/Attempt');
 const Answer = require('../models/Answer');
+const User = require('../models/User');
+const { sendReminderEmail } = require('../services/emailService');
 
 exports.getAllTests = async (req, res) => {
   try {
@@ -36,7 +38,6 @@ exports.getTestById = async (req, res) => {
 };
 
 exports.createTest = async (req, res) => {
-  // Validate required fields
   if (!req.body.title || !req.body.duration) {
     return res.status(400).json({ message: 'Title and duration are required' });
   }
@@ -54,9 +55,24 @@ exports.createTest = async (req, res) => {
       negativeMarking: req.body.negativeMarking || false,
       negativeMarkingValue: req.body.negativeMarkingValue ? parseInt(req.body.negativeMarkingValue) : 0,
       maxAttempts: req.body.maxAttempts ? parseInt(req.body.maxAttempts) : 1,
+      isActive: req.body.isActive || false,
       createdBy: new mongoose.Types.ObjectId(req.user.id)
     });
     await test.save();
+
+    // If test is created as active, send reminder emails to all students
+    if (test.isActive) {
+      const students = await User.find({ role: 'student' }).select('name email');
+      students.forEach(student => {
+        sendReminderEmail({
+          email: student.email,
+          userName: student.name,
+          testTitle: test.title,
+          duration: test.duration
+        }).catch(err => console.error('Failed to send reminder email:', err.message));
+      });
+    }
+
     res.status(201).json(test);
   } catch (err) {
     console.log('Error creating test:', err.message);
@@ -66,8 +82,25 @@ exports.createTest = async (req, res) => {
 
 exports.updateTest = async (req, res) => {
   try {
+    const oldTest = await Test.findById(req.params.id);
+    if (!oldTest) return res.status(404).json({ message: 'Test not found' });
+
     const test = await Test.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!test) return res.status(404).json({ message: 'Test not found' });
+
+    // If test was just activated (isActive changed from false to true), send reminder emails
+    if (!oldTest.isActive && test.isActive) {
+      const students = await User.find({ role: 'student' }).select('name email');
+      students.forEach(student => {
+        sendReminderEmail({
+          email: student.email,
+          userName: student.name,
+          testTitle: test.title,
+          duration: test.duration
+        }).catch(err => console.error('Failed to send reminder email:', err.message));
+      });
+    }
+
     res.json(test);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });

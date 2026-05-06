@@ -3,6 +3,7 @@ const Attempt = require('../models/Attempt');
 const Answer = require('../models/Answer');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { sendWelcomeEmail } = require('../services/emailService');
 
 exports.getAllStudents = async (req, res) => {
   try {
@@ -24,6 +25,11 @@ exports.createStudent = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password || 'password123', 10); // Default password
     const user = new User({ name, email, phone, password: hashedPassword, role: 'student' });
     await user.save();
+
+    // Send welcome email to created student (async)
+    sendWelcomeEmail({ name: user.name, email: user.email }).catch(err => {
+      console.error('Failed to send welcome email to student:', err.message);
+    });
 
     const student = { _id: user._id, name, email, phone, role: 'student', createdAt: user.createdAt };
     res.status(201).json(student);

@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 const User = require('../models/User');
+const { sendWelcomeEmail } = require('../services/emailService');
 
 const isAdminEmail = (email) => {
   const adminEmails = process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',') : [];
@@ -24,6 +25,13 @@ exports.register = async (req, res) => {
     const role = isAdminEmail(email) ? 'admin' : 'student';
     const user = new User({ name, email, phone, password: hashedPassword, role });
     await user.save();
+
+    // Send welcome email to student (async, don't block registration)
+    if (role === 'student') {
+      sendWelcomeEmail({ name, email }).catch(err => {
+        console.error('Failed to send welcome email:', err.message);
+      });
+    }
 
     const token = jwt.sign({ id: user._id, email, role }, process.env.JWT_SECRET, { expiresIn: '3h' });
     res.status(201).json({ token, user: { id: user._id, name, email, phone, role } });
